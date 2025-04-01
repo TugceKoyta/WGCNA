@@ -1,80 +1,88 @@
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 from scipy import stats
 
-# Charger le fichier .parquet
-ko_data = pd.read_parquet('/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/ko_mt_mg_ratio.parquet')
+### 🔹 Charger les données KO
+ko_data_path = "/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/ko_mt_mg_ratio.parquet"
+ko_data = pd.read_parquet(ko_data_path)
 
-# Lire les fichiers contenant les échantillons malades et sains
+### 🔹 Fonction pour lire les fichiers contenant les échantillons
 def lire_echantillons(fichier):
-    with open(fichier, 'r') as f:
-        return [ligne.strip() for ligne in f.readlines()]
+    try:
+        with open(fichier, "r") as f:
+            return [ligne.strip() for ligne in f.readlines()]
+    except FileNotFoundError:
+        print(f"⚠️ Erreur : Fichier {fichier} introuvable.")
+        return []
 
-# Charger les listes depuis les fichiers
-samples_malades = lire_echantillons("/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/samples_malades.txt")
-samples_sains = lire_echantillons("/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/samples_sains.txt")
+### 🔹 Charger les listes d'échantillons malades et sains
+samples_malades_path = "/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/samples_malades.txt"
+samples_sains_path = "/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/samples_sains.txt"
 
+samples_malades = lire_echantillons(samples_malades_path)
+samples_sains = lire_echantillons(samples_sains_path)
 
-# Vérifier les échantillons présents dans ko_data
-print(f"Échantillons présents dans les données: {ko_data.index.tolist()}")
-
-# Filtrer les échantillons malades et sains en fonction de ce qui est dans les données
+# Vérifier les échantillons réellement présents dans ko_data
 samples_malades_valid = [sample for sample in samples_malades if sample in ko_data.index]
 samples_sains_valid = [sample for sample in samples_sains if sample in ko_data.index]
 
-# Afficher un message si des échantillons sont absents
+# Avertir si certains échantillons sont manquants
 if len(samples_malades_valid) != len(samples_malades):
-    print(f"Avertissement: Certains échantillons malades sont absents dans les données.")
-    if len(samples_sains_valid) != len(samples_sains):
-        print(f"Avertissement: Certains échantillons sains sont absents dans les données.")
+    print(f"⚠️ Avertissement : Certains échantillons malades sont absents des données.")
+if len(samples_sains_valid) != len(samples_sains):
+    print(f"⚠️ Avertissement : Certains échantillons sains sont absents des données.")
 
-# Sélectionner les KO pour les échantillons valides
+### 🔹 Filtrer les KO pour les échantillons valides
 ko_malades = ko_data.loc[samples_malades_valid]
 ko_sains = ko_data.loc[samples_sains_valid]
 
-# Affichage des résultats pour vérifier
-print("KO des échantillons malades :")
-print(ko_malades)
-print("\nKO des échantillons sains :")
-print(ko_sains)
+print(f"✅ {ko_malades.shape[1]} KO chargés pour {len(samples_malades_valid)} malades.")
+print(f"✅ {ko_sains.shape[1]} KO chargés pour {len(samples_sains_valid)} sains.")
 
-# Calcul du t-test pour chaque KO (chaque colonne)
-# On itère sur les KO en tant que colonnes et effectue le test entre les groupes
+### 🔹 Effectuer un test statistique pour comparer les groupes
 results = []
 for ko in ko_malades.columns:
-    try:
-        t_stat, p_val = stats.ttest_ind(ko_malades[ko], ko_sains[ko], nan_policy='omit')
+    malades_vals = ko_malades[ko].dropna()
+    sains_vals = ko_sains[ko].dropna()
+
+    if len(malades_vals) > 1 and len(sains_vals) > 1:  # Éviter les erreurs avec un seul point
+        t_stat, p_val = stats.ttest_ind(malades_vals, sains_vals, nan_policy="omit", equal_var=False)
         results.append((ko, t_stat, p_val))
-    except Exception as e:
-        print(f"Erreur lors du calcul pour {ko}: {e}")
 
-# Convertir les résultats en DataFrame pour une meilleure visualisation
-results_df = pd.DataFrame(results, columns=['KO', 'T-statistic', 'P-value'])
+### 🔹 Convertir les résultats en DataFrame
+results_df = pd.DataFrame(results, columns=["KO", "T-statistic", "P-value"])
 
-# Enregistrer les résultats dans un fichier CSV
-results_df.to_csv('/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/ko_comparison_results.csv', index=False)
+# Filtrer les KO avec une p-value < 0.05
+significant_ko = results_df[results_df["P-value"] < 0.05]
 
-# Affichage des résultats significatifs (p-value < 0.05)
-significant_results = results_df[results_df['P-value'] < 0.05]
-print("KO significatifs:")
-print(significant_results)
+### 🔹 Ajouter un critère supplémentaire : enrichissement chez les malades
+mean_malades = ko_malades.mean()
+mean_sains = ko_sains.mean()
 
-# Filtrer les KO avec une p-value significativement inférieure à 0.05
-significant_ko = results_df[results_df['P-value'] < 0.05]
+# Calculer le log2 fold-change entre malades et sains
+log2fc = np.log2((mean_malades + 1e-6) / (mean_sains + 1e-6))  # Éviter la division par 0
+significant_ko["log2FC"] = significant_ko["KO"].map(log2fc)
 
-# Afficher les KO significatifs
-print(significant_ko)
+# Filtrer les KO avec un enrichissement minimum (ex: log2FC > 1 signifie un enrichissement x2)
+significant_ko = significant_ko[significant_ko["log2FC"] > 1]
 
-import matplotlib.pyplot as plt
+print(f"✅ {len(significant_ko)} KO significatifs avec enrichissement chez les malades.")
 
-# Tracer les p-values
+### 🔹 Sauvegarder les résultats
+output_path = "/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/"
+significant_ko.to_csv(output_path + "ko_significatifs.csv", index=False)
+results_df.to_csv(output_path + "ko_comparison_results.csv", index=False)
+
+### 🔹 Visualisation des P-values
 plt.figure(figsize=(10, 6))
-plt.scatter(results_df['KO'], results_df['P-value'], color='blue', label='P-values', alpha=0.5)
-plt.axhline(y=0.05, color='red', linestyle='--', label='Seuil de 0.05')
-plt.xlabel('KO')
-plt.ylabel('P-value')
-plt.title('P-value des tests t pour chaque KO')
+plt.scatter(results_df["KO"], results_df["P-value"], color="blue", alpha=0.5, label="P-values")
+plt.axhline(y=0.05, color="red", linestyle="--", label="Seuil de 0.05")
+plt.xlabel("KO")
+plt.ylabel("P-value")
+plt.title("P-value des tests t pour chaque KO")
 plt.legend()
 plt.xticks(rotation=90)
 plt.tight_layout()
-plt.savefig('/scratch/users/tkoytaviloglu/results/outputs/imp_output_test/significant_ko.png')
+plt.savefig(output_path + "significant_ko.png")
 plt.show()
