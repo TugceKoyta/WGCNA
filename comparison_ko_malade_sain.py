@@ -80,45 +80,47 @@ results_df.to_csv(output_path + "ko_comparison_results.csv", index=False)
 boxplot_data = pd.DataFrame({
         "Abondance KO": np.concatenate([ko_malades.mean(axis=1), ko_sains.mean(axis=1)]),
             "Groupe": ["Malade"] * len(ko_malades) + ["Sain"] * len(ko_sains)
-        })
+            })
 
-# Tracer le boxplot avec Seaborn
-plt.figure(figsize=(8, 6))
-sns.boxplot(x="Groupe", y="Abondance KO", data=boxplot_data)
-plt.title("Comparaison de l'abondance des KO entre malades et sains")
-plt.savefig(output_path + "boxplot_ko.png")
+### 🔹 Visualisation des résultats
+## P-value Plot
+plt.figure(figsize=(10, 6))
+plt.scatter(results_df["KO"], results_df["P-value"], color="blue", alpha=0.5, label="P-values")
+plt.axhline(y=0.05, color="red", linestyle="--", label="Threshold 0.05")
+plt.xlabel("KO")
+plt.ylabel("P-value")
+plt.title("P-values of t-tests for each KO")
+plt.legend()
+plt.xticks(rotation=90)
+plt.tight_layout()
+plt.savefig(output_path + "pvalue_plot.png")
 plt.show()
 
-# Visualisation : Volcano Plot
+## Volcano Plot
 plt.figure(figsize=(10, 6))
 plt.scatter(results_df["log2FC"], -np.log10(results_df["P-value"]), color="gray", alpha=0.5)
-plt.scatter(significant_ko["log2FC"], -np.log10(significant_ko["P-value"]), color="red", label="KO significatifs")
-plt.axhline(y=-np.log10(0.05), color="blue", linestyle="--", label="Seuil de 0.05")
-plt.xlabel("Log2 Fold Change")
+plt.scatter(significant_ko["log2FC"], -np.log10(significant_ko["P-value"]), color="red", label="Significant KOs")
+plt.xlabel("log2 Fold Change")
 plt.ylabel("-log10 P-value")
-plt.title("Volcano Plot des KO")
+plt.title("Volcano Plot of KO significance")
 plt.legend()
 plt.savefig(output_path + "volcano_plot.png")
 plt.show()
 
-# Visualisation : Barplot des 10 KO les plus significatifs
-plt.figure(figsize=(12, 6))
-top_ko = significant_ko.nsmallest(10, "P-value")
+## Heatmap with colored samples
+plt.figure(figsize=(12, 8))
+row_colors = ["red" if sample in samples_malades_valid else "blue" for sample in ko_data.index]
+sns.heatmap(ko_data.loc[samples_malades_valid + samples_sains_valid], cmap="coolwarm", xticklabels=True, yticklabels=True)
+plt.title("KO Abundance Heatmap")
+plt.xlabel("KO")
+plt.ylabel("Samples")
+plt.savefig(output_path + "heatmap.png")
+plt.show()
+
+## Top 10 KO Barplot
+top_ko = significant_ko.nlargest(10, "P-value")
+plt.figure(figsize=(10, 6))
 sns.barplot(y=top_ko["KO"], x=-np.log10(top_ko["P-value"]), hue=top_ko["KO"], palette="viridis", legend=False)
 plt.xlabel("-log10 P-value")
 plt.ylabel("KO")
-plt.title("Top 10 KO les plus significatifs")
-plt.savefig(output_path + "top10_ko.png")
-plt.show()
-
-# Visualisation : Heatmap des KO significatifs
-if len(significant_ko) > 1:
-    top_ko_heatmap = significant_ko["KO"].tolist()
-    data_heatmap = ko_data[top_ko_heatmap].T
-    plt.figure(figsize=(12, 8))
-    sns.heatmap(data_heatmap, cmap="coolwarm", xticklabels=False)
-    plt.xlabel("Échantillons")
-    plt.ylabel("KO")
-    plt.title("Heatmap des KO les plus significatifs")
-    plt.savefig(output_path + "heatmap_ko.png")
-    plt.show()
+plt.title("Top 10 Most Significant KOs")
