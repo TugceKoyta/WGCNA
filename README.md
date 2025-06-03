@@ -11,7 +11,7 @@
 2. **`scripts/`**: Contains the processing, analysis, and visualization scripts.
    - `preprocessing/` : Scripts to clean and transform the raw data.
    - `analysis/` : Scripts for performing calculations, statistics, or data analysis.
-   - `visualization/` : Scripts for generating graphs and visualizations.
+   - `results/` : Scripts for generating graphs and visualizations.
    - `utils/` : Reusable utility scripts and functions.
 
 3. **`results/`**: Stores the results from the analyses.
